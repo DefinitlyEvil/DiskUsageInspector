@@ -1,0 +1,199 @@
+name: release
+
+# Tag-driven release: push vX.Y.Z, get a portable zip, checksums, Sigstore build
+# provenance and a GitHub release. Signing is not active yet - see
+# CODE_SIGNING.md - so the artifact is published unsigned but verifiable.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)publish, e.g. v0.1.0"
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    name: build and publish
+    runs-on: windows-latest
+    steps:
+      - name: Check out the tagged commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Resolve the release tag
+        shell: pwsh
+        run: |
+          $tag = '${{ github.event.inputs.tag }}'
+          if (-not $tag) { $tag = $env:GITHUB_REF_NAME }
+          if (-not $tag) { Write-Error "no release tag in this run"; exit 1 }
+          "RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "releasing tag: $tag"
+
+      - name: Require the tag to point at main
+        shell: pwsh
+        run: |
+          git fetch origin main --no-tags
+          $sha = (git rev-parse HEAD).Trim()
+          git merge-base --is-ancestor $sha origin/main
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Refusing to release ${sha}: it is not an ancestor of origin/main."
+            exit 1
+          }
+          Write-Host "releasing $sha from origin/main"
+
+      - name: MSYS2 UCRT64 toolchain (gcc, binutils/windres)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          path-type: inherit
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-binutils
+
+      - name: Rust GNU-host toolchain
+        shell: pwsh
+        run: |
+          rustup toolchain install stable-x86_64-pc-windows-gnu --profile minimal --component rustfmt --component clippy
+          "RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-gnu" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          rustc -V
+          cargo -V
+          where.exe windres
+          where.exe gcc
+
+      - name: Format check
+        run: cargo fmt --check
+
+      - name: Clippy (warnings are errors)
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Tests
+        run: cargo test --locked
+
+      - name: Read-only invariant check
+        shell: pwsh
+        run: |
+          # Mirrors AGENTS.md section 11: no API that could delete, rename,
+          # truncate or write to a scanned path may exist in the shipped source.
+          $forbidden = @(
+            'remove_file', 'remove_dir', 'remove_dir_all', 'set_permissions',
+            'OpenOptions::write', 'File::create', 'CreateFileW',
+            'SHFileOperation', 'MoveFile', 'DeleteFile', 'SetFileAttributes',
+            'GENERIC_WRITE', 'FILE_WRITE_DATA', 'WRITE_DAC', 'WRITE_OWNER'
+          )
+          $files = Get-ChildItem -Path src -Recurse -Filter *.rs
+          $bad = @()
+          foreach ($p in $forbidden) {
+            foreach ($hit in ($files | Select-String -SimpleMatch $p)) {
+              $bad += "$($hit.Path):$($hit.LineNumber): $p"
+            }
+          }
+          if ($bad.Count -gt 0) {
+            $bad | ForEach-Object { Write-Host "::error::forbidden API: $_" }
+            exit 1
+          }
+          Write-Host "read-only invariants: clean ($($forbidden.Count) patterns over $($files.Count) files)"
+
+      - name: Build release binaries
+        run: cargo build --release --locked
+
+      - name: Verify embedded metadata against the tag
+        shell: pwsh
+        run: |
+          $tag = $env:RELEASE_TAG
+          $expected = $tag.TrimStart('v')
+          $vi = (Get-Item target/release/disk-usage-inspector.exe).VersionInfo
+          Write-Host "exe FileVersion : $($vi.FileVersion)"
+          Write-Host "exe ProductName : $($vi.ProductName)"
+          Write-Host "exe CompanyName : $($vi.CompanyName)"
+          Write-Host "exe Copyright   : $($vi.LegalCopyright)"
+          if ($vi.FileVersion -ne $expected) {
+            Write-Error "tag says $expected but the exe says '$($vi.FileVersion)' - bump Cargo.toml before tagging."
+            exit 1
+          }
+          if ($vi.ProductName -ne 'Disk Usage Inspector') {
+            Write-Error "VERSIONINFO resource missing or unset (ProductName='$($vi.ProductName)')."
+            exit 1
+          }
+
+      - name: Stage the portable archive
+        id: stage
+        shell: pwsh
+        run: |
+          $tag = $env:RELEASE_TAG
+          $name = "disk-usage-inspector-$tag-win64"
+          $stage = Join-Path 'dist' $name
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item target/release/disk-usage-inspector.exe $stage
+          Copy-Item target/release/duiscan.exe $stage
+          Copy-Item README.md, LICENSE, NOTICE, CODE_SIGNING.md $stage
+
+          Push-Location $stage
+          $lines = Get-ChildItem -File |
+            Sort-Object Name |
+            ForEach-Object { '{0}  {1}' -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name }
+          Set-Content -Path SHA256SUMS.txt -Value $lines -Encoding ascii
+          Pop-Location
+
+          $zip = Join-Path 'dist' "$name.zip"
+          Compress-Archive -Path $stage -DestinationPath $zip -CompressionLevel Optimal
+          $size = [math]::Round((Get-Item $zip).Length / 1MB, 2)
+          Write-Host "packaged $zip ($size MB)"
+          Get-Content (Join-Path $stage 'SHA256SUMS.txt') | ForEach-Object { Write-Host "  $_" }
+          "zip=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "name=$name" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Upload the unsigned archive (also the input for signing)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.stage.outputs.name }}-unsigned
+          path: ${{ steps.stage.outputs.zip }}
+          if-no-files-found: error
+          retention-days: 30
+
+      # Signing slot. Inactive until the SignPath Foundation application is
+      # accepted (see CODE_SIGNING.md). To activate:
+      #   1. set repository variable SIGNPATH_ENABLED=true
+      #   2. add secrets SIGNPATH_API_TOKEN and SIGNPATH_ORGANIZATION_ID
+      #   3. replace this step with signpath/github-action-submit-signing-request
+      #      using the artifact uploaded above (wait-for-completion: true) and
+      #      publish the signed output archive instead.
+      - name: Signing not configured
+        shell: pwsh
+        run: |
+          Write-Host "Artifact is unsigned: no code-signing certificate is active for this project yet."
+          Write-Host "Users verify with SHA256SUMS.txt or 'gh attestation verify'; see CODE_SIGNING.md."
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ${{ steps.stage.outputs.zip }}
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $zip = '${{ steps.stage.outputs.zip }}'
+          gh release view $env:RELEASE_TAG --json tagName 2>$null | Out-Null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "release $env:RELEASE_TAG exists - replacing its assets"
+            gh release upload $env:RELEASE_TAG $zip --clobber
+          } else {
+            gh release create $env:RELEASE_TAG $zip --title "Disk Usage Inspector $env:RELEASE_TAG" --generate-notes --verify-tag
+          }
+          gh release view $env:RELEASE_TAG --json tagName,url,assets

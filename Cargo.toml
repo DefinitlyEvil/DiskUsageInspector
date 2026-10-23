@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.99"
 description = "Read-only disk usage inspector for Windows"
+license = "Apache-2.0"
+repository = "https://github.com/DefinitlyEvil/DiskUsageInspector"
+keywords = ["disk-usage", "windows", "gui", "eframe", "read-only"]
+categories = ["command-line-utilities", "gui"]
 
 [dependencies]
 eframe = "0.37"

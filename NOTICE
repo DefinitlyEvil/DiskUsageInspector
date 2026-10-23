@@ -1,0 +1,10 @@
+Disk Usage Inspector
+Copyright 2026 DefinitlyEvil
+
+Licensed under the Apache License, Version 2.0. See LICENSE for the full text.
+
+The release binaries statically link third-party Rust crates (notably egui,
+eframe and windows-sys, plus their transitive dependencies). Those crates are
+distributed under their own licenses — predominantly MIT OR Apache-2.0 — and the
+exact versions are pinned in Cargo.lock, with each crate's license text
+available from its published source.

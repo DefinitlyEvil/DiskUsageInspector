@@ -1,0 +1,68 @@
+name: ci
+
+# Fast feedback on every push and pull request: the same gate the release
+# workflow runs, without packaging or publishing anything.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: fmt, clippy, tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: MSYS2 UCRT64 toolchain (gcc, binutils/windres)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          path-type: inherit
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-binutils
+
+      - name: Rust GNU-host toolchain
+        shell: pwsh
+        run: |
+          rustup toolchain install stable-x86_64-pc-windows-gnu --profile minimal --component rustfmt --component clippy
+          "RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-gnu" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          rustc -V
+          cargo -V
+
+      - name: Format check
+        run: cargo fmt --check
+
+      - name: Clippy (warnings are errors)
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Tests
+        run: cargo test --locked
+
+      - name: Read-only invariant check
+        shell: pwsh
+        run: |
+          $forbidden = @(
+            'remove_file', 'remove_dir', 'remove_dir_all', 'set_permissions',
+            'OpenOptions::write', 'File::create', 'CreateFileW',
+            'SHFileOperation', 'MoveFile', 'DeleteFile', 'SetFileAttributes',
+            'GENERIC_WRITE', 'FILE_WRITE_DATA', 'WRITE_DAC', 'WRITE_OWNER'
+          )
+          $files = Get-ChildItem -Path src -Recurse -Filter *.rs
+          $bad = @()
+          foreach ($p in $forbidden) {
+            foreach ($hit in ($files | Select-String -SimpleMatch $p)) {
+              $bad += "$($hit.Path):$($hit.LineNumber): $p"
+            }
+          }
+          if ($bad.Count -gt 0) {
+            $bad | ForEach-Object { Write-Host "::error::forbidden API: $_" }
+            exit 1
+          }
+          Write-Host "read-only invariants: clean"
