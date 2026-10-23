@@ -1,6 +1,6 @@
 [package]
 name = "disk-usage-inspector"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.99"
 description = "Read-only disk usage inspector for Windows"

@@ -207,7 +207,7 @@ installed as a fallback if an MSVC link regression ever needs bisecting.
 | Scanner benchmark | `cmd /c "E:\msys64\gccenv.bat && cargo run --release --bin duiscan -- C:\ --top 10"` |
 | Regenerate the icon (design changes only) | `pwsh -NoProfile -File tools\make-icon.ps1` |
 | Check the exe's embedded metadata | `(Get-Item target\release\disk-usage-inspector.exe).VersionInfo` |
-| Cut a release | `git tag -a v0.1.0 -m "v0.1.0"` then `git push origin v0.1.0` |
+| Cut a release | `git tag -a v0.1.1 -m "v0.1.1"` then `git push origin v0.1.1` |
 
 The toolchain is pinned by `rust-toolchain.toml` (`stable-x86_64-pc-windows-msvc`),
 so a plain `cargo` call inside the repo uses MSVC even though the machine default
