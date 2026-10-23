@@ -161,10 +161,23 @@ fails the build if anything machine-specific leaks into either executable.
 
 ## Build from source
 
-**Requirements:** Windows 10/11 and a Rust toolchain (`rustup`, edition 2024 → Rust 1.99+).
-Either the MSVC toolchain or the GNU toolchain works; this project was built and
-measured with MSYS2 UCRT64 `gcc` — see [AGENTS.md](AGENTS.md) for the exact setup on
-this machine.
+**Requirements:** Windows 10/11, a Rust toolchain (`rustup`, edition 2024 → Rust
+1.99+) and a linker. The published binaries are built with **MSVC** — the
+toolchain is pinned by `rust-toolchain.toml`, so `rustup` fetches
+`stable-x86_64-pc-windows-msvc` for you — which means one of:
+
+- **Visual Studio 2022 Build Tools** with *Desktop development with C++* (this
+  supplies `link.exe` and the Windows SDK import libraries), or the full Visual
+  Studio 2022 install. That is what antivirus heuristics expect to see: an
+  ordinary Visual Studio–shaped image rather than a mingw one.
+- `windres` for the icon/version resource, which `build.rs` compiles. Any
+  `mingw-w64` binutils works — on MSYS2, `pacman -S mingw-w64-ucrt-x86_64-binutils`
+  — or point `WINDRES` at the executable. `rc.exe` is preferred automatically
+  when it is on `PATH` and the target is MSVC.
+
+The exe is linked with the static CRT (`+crt-static`), so it has no
+`VCRUNTIME140.dll` dependency: one file, nothing to install. See
+[AGENTS.md](AGENTS.md) for the exact toolchain on this machine.
 
 ```powershell
 git clone git@github.com:DefinitlyEvil/DiskUsageInspector.git
@@ -178,7 +191,7 @@ The build produces two binaries in `target\release\`:
 
 | Binary | What it is |
 | :--- | :--- |
-| `disk-usage-inspector.exe` | the GUI (~8 MB, self-contained, no extra runtime DLLs) |
+| `disk-usage-inspector.exe` | the GUI (~8 MB unstripped, ~11 MB in the release zip; self-contained, no extra runtime DLLs) |
 | `duiscan.exe` | a console harness with the same scanner and no GUI — for benchmarking and scripting |
 
 To build the same artifacts that get published (build paths remapped, leak check

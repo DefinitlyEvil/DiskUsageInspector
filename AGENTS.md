@@ -60,32 +60,38 @@ cmd /c "E:\msys64\gccenv.bat && cargo test 2>&1"
 
 | Variable / action | Value | Why it matters |
 |---|---|---|
-| `PATH` prepend | `E:\msys64\ucrt64\bin` | `gcc` is the linker for the GNU target |
+| `PATH` prepend | `E:\msys64\ucrt64\bin` | supplies `windres` (icon/VERSIONINFO resource) |
 | `GOROOT` | `D:\Programs\go` | unrelated to this project |
 | `GOPATH` | `E:\Cache\go` | unrelated to this project |
 | `CARGO_HOME` | `E:\Cache\CargoHome` | cargo/rustup binaries + cargo config live here |
 | `RUSTUP_DIST_SERVER` | `https://mirrors.tuna.tsinghua.edu.cn/rustup` | rustup mirror (must be set *before* any `rustup` call) |
-| `CALL ...\VsDevCmd.bat` | VS 2022 dev env | only needed if the MSVC target is ever used |
+| `CALL ...\VsDevCmd.bat` | VS 2022 dev env | the MSVC linker and import libraries — required, it is the default target now |
 
 ### 2.2 Verified toolchain facts (2026-10-24)
 
 | Item | Value |
 |---|---|
 | rustup | **MSYS2 UCRT64 package** (pacman), v1.29.2 — `E:\msys64\ucrt64\bin\rustup.exe` |
-| default host | `x86_64-pc-windows-gnu` |
-| toolchain | `stable-x86_64-pc-windows-gnu` (installed via `rustup-init` from the TUNA mirror), rustc **1.99.1** (2026-10-13), LLVM 23.1.1 |
+| default host | `x86_64-pc-windows-gnu`, overridden per repo by `rust-toolchain.toml` |
+| toolchain (repo) | `stable-x86_64-pc-windows-msvc` — installed via the TUNA mirror, pinned by `rust-toolchain.toml`; rustc **1.99.1** (2026-10-13), LLVM 23.1.1. `stable-x86_64-pc-windows-gnu` is also installed and stays as a fallback |
 | cargo | 1.99.1 |
 | rustup home | `%USERPROFILE%\.rustup` (default, on purpose) |
-| gcc | MSYS2 UCRT64 **16.2.0** (x86_64-w64-mingw32) |
-| Windows SDK 10 | **not installed** |
-| VS 2022 | `E:\Programs\VS2022Community` (MSVC 14.42 toolset, no SDK) |
+| windres | MSYS2 UCRT64 binutils **16.2.0** — only used to compile the `.rc` into COFF |
+| Windows SDK 10 | installed at **`E:\Windows Kits\10`** (10.0.22621) — non-default path, `VsDevCmd.bat` finds it through the registry |
+| VS 2022 | `E:\Programs\VS2022Community` — MSVC 14.42.34433 toolset (this is the linker) |
 | CPUs / RAM | Ryzen 9 9950X (16C/32T) / 125.6 GB |
 
-**Why GNU and not MSVC:** there is no Windows 10 SDK on this machine, so the
-MSVC target cannot link Win32 GUI apps without a multi-GB SDK install. The GNU
-target was verified to compile and link a real Win32 GUI binary (FFI to
-`user32!MessageBoxW`, `-mwindows`) using the UCRT64 gcc. Stay on
-`x86_64-pc-windows-gnu` unless the SDK is installed later.
+**Why MSVC and not GNU (changed 2026-10-24, user request):** antivirus
+heuristics treat mingw/GNU images as less ordinary — the import table, section
+shape and runtime strings differ from anything Visual Studio emits — and the
+release is unsigned, so reputation is the only thing standing between a
+download and a SmartScreen/AV warning. An MSVC build looks like an ordinary VS
+application: `link.exe` from the 14.42 toolset, Windows SDK 10.0.22621 import
+libraries, `/MT` static CRT so no `VCRUNTIME140.dll` dependency survives (see
+`.cargo/config.toml`). Measured cost: none — 8.4 MB unstripped, same 6.3 s C:
+scan as the GNU build. MSYS2 is still required, but only for `windres`
+(the resource compiler for the icon/version block); the GNU toolchain stays
+installed as a fallback if an MSVC link regression ever needs bisecting.
 
 **Do not** invoke `E:\msys64\ucrt64\bin\gcc.exe` directly without activation:
 `cc1.exe` fails silently with exit code 1 because its DLLs are only found when
@@ -156,8 +162,8 @@ target was verified to compile and link a real Win32 GUI binary (FFI to
   `license = "Apache-2.0"`; when a dependency with different terms is added,
   record it in `NOTICE` in the same commit.
 - **Release pipeline:** `.github/workflows/release.yml` runs on a `v*` tag (or
-  `workflow_dispatch` with an existing tag), on `windows-latest` with MSYS2
-  UCRT64 + `stable-x86_64-pc-windows-gnu`. It re-runs the §3 gate, enforces the
+  `workflow_dispatch` with an existing tag), on `windows-latest` with the MSVC
+  toolchain (`stable-x86_64-pc-windows-msvc`); MSYS2 supplies only `windres`. It re-runs the §3 gate, enforces the
   §11.2 read-only grep, checks the exe's VERSIONINFO against the tag, stages
   `dist/disk-usage-inspector-<tag>-win64.zip` (both exes, docs, `SHA256SUMS.txt`),
   attests build provenance and publishes the GitHub release. `.github/workflows/ci.yml`
@@ -174,7 +180,13 @@ target was verified to compile and link a real Win32 GUI binary (FFI to
   artifact does not depend on machine-level cargo config. A plain
   `cargo build --release` must never be published: Rust embeds compile-time
   `file!()` paths from dependencies, and an unstripped binary exposes the build
-  machine's layout.
+  machine's layout. What must never ship is a **personal identifier**: a user
+  name, an e-mail address, or this machine's own directories (`D:\Develop\…`,
+  `E:\Cache\…`, `C:\Users\Kevin\…`). A hosted-runner path (`D:\a\…`,
+  `C:\Users\runneradmin\…`) is acceptable — it names GitHub's ephemeral VM, not
+  a person — so do not trade artifact quality or build time to erase it. The
+  remap removes both for free; the check stays because it is also what stops a
+  locally built, unstripped binary from being published by mistake.
 - **Release tagging:** bump `Cargo.toml` version, commit, then
   `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z`. A mismatch between
   the tag and the exe's `FileVersion` fails the workflow before publishing.
@@ -196,6 +208,11 @@ target was verified to compile and link a real Win32 GUI binary (FFI to
 | Regenerate the icon (design changes only) | `pwsh -NoProfile -File tools\make-icon.ps1` |
 | Check the exe's embedded metadata | `(Get-Item target\release\disk-usage-inspector.exe).VersionInfo` |
 | Cut a release | `git tag -a v0.1.0 -m "v0.1.0"` then `git push origin v0.1.0` |
+
+The toolchain is pinned by `rust-toolchain.toml` (`stable-x86_64-pc-windows-msvc`),
+so a plain `cargo` call inside the repo uses MSVC even though the machine default
+is the GNU toolchain. `gccenv.bat` is still the way in, because `build.rs` shells
+out to `windres` for the resource block.
 
 Artifacts:
 - `target\release\disk-usage-inspector.exe` — the GUI (single self-contained
@@ -366,6 +383,8 @@ Build-time files outside `src/`:
 
 ```
 res/app.ico          # application icon (16-256 px); regenerated by tools/make-icon.ps1
+rust-toolchain.toml  # pins stable-x86_64-pc-windows-msvc for every cargo call in the repo
+.cargo/config.toml   # target-dir = target, plus +crt-static for the msvc target
 .github/workflows/   # ci.yml (gate on push/PR) + release.yml (tag -> zip + release)
 tools/build-release.ps1 # path-stripped release build; fails if a local path leaks
 ```
@@ -456,7 +475,7 @@ UI (`app.rs`):
 5. In `app.rs`/`scan.rs` the code is safe Rust; `unsafe` lives only in
    `platform.rs` with a safety comment per block.
 
-### 6.3 Measured performance (release, this machine, warm cache)
+### 6.3 Measured performance (MSVC release, this machine, warm cache)
 
 | Run | Time | Files | Folders | Bytes | Nodes | Peak WS |
 |---|---|---|---|---|---|---|
@@ -503,8 +522,8 @@ raw-Win32 row above is kept as history, not as an option to revisit.
 ## 7. Milestones
 
 - **Phase 0 — spike.** PASSED 2026-10-24 (§6.4): eframe 0.37 builds and runs on
-  the GNU toolchain, no console flash, release profile capped at `opt-level=3`,
-  thin LTO, `panic="abort"`.
+  the MSVC toolchain (the spike itself used GNU), no console flash, release
+  profile capped at `opt-level=3`, thin LTO, `panic="abort"`.
 - **Phase 1 — drive list.** DONE: lettered volumes with label, filesystem, type,
   total/used/free, bar, refresh, rescan.
 - **Phase 2 — scanner.** DONE: `FindFirstFileExW` enumerator, worker pool,
@@ -527,7 +546,7 @@ raw-Win32 row above is kept as history, not as an option to revisit.
 
 | # | Decision | Rationale |
 |---|---|---|
-| 1 | GNU target, UCRT64 gcc linker | no Windows SDK installed; verified link of Win32 GUI |
+| 1 | **MSVC target** (`x86_64-pc-windows-msvc`, VS 14.42 + SDK 10.0.22621, static CRT) | AV heuristics treat mingw/GNU images as unusual; an MSVC build has the shape of any Visual Studio app. No runtime DLLs (static CRT), and the C: scan time is unchanged |
 | 2 | Custom `FindFirstFileExW` scanner | control over cancel/errors/reparse; speed |
 | 3 | Arena + flattened visible rows | 100k+ node trees without per-node allocations |
 | 4 | Logical size default, on-disk opt-in per scan | one syscall vs two per file; toggling mid-session needs a rescan |
@@ -549,7 +568,7 @@ raw-Win32 row above is kept as history, not as an option to revisit.
 
 | Risk | Mitigation |
 |---|---|
-| GUI stack fails to build on GNU toolchain | **retired** — eframe 0.37 built and ran on 2026-10-24; MSVC + SDK install stays as fallback |
+| MSVC link/WINDRES break after a dependency bump | CI runs the same MSVC gate on every push; the GNU toolchain stays installed for bisecting |
 | `eframe` GPU init fails on odd drivers | eframe has a software fallback; test on the target machine early |
 | Scan slower than expected on HDD/network | measure in Phase 2 CLI; offer depth limit and skip-network |
 | Memory blow-up on 5M files | **measured**: dirs-only on C: is 500k nodes / ~109 MB; file nodes would be 2.8M / ~448 MB, so they are lazy by design (§6.1) |
@@ -639,9 +658,13 @@ sorting/tie-breaking.
 7. **Code signing → free only.** Paid certificates are ruled out; if the free
    OSS signing program declines, releases stay unsigned with checksums and
    attestation as the trust anchors (`CODE_SIGNING.md`).
+8. **Windows toolchain → MSVC, not GNU** (2026-10-24). Motivated by AV
+   false positives: an unsigned mingw binary is exactly the shape heuristics
+   distrust, while an MSVC build looks like an ordinary VS app. Static CRT keeps
+   the single-file promise. The GNU toolchain is still installed as a fallback.
 
 **Still open (must be answered before the feature that needs them):**
 
-8. **Admin fast path:** optional MFT/USN "instant" mode (admin, NTFS only)? Not
+9. **Admin fast path:** optional MFT/USN "instant" mode (admin, NTFS only)? Not
    needed for v1: C: is already 6.3 s without it. Decide only if a slower disk
    makes a full scan painful.

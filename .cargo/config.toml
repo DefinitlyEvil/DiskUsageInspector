@@ -1,2 +1,9 @@
 [build]
 target-dir = "target"
+
+# The release artifact must stay a single self-contained exe: a dynamically
+# linked CRT would add a VCRUNTIME140.dll dependency that a clean Windows
+# install does not have. rustc's msvc targets default to the dynamic CRT, so
+# ask for the static one explicitly (VS projects built with /MT look the same).
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

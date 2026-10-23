@@ -46,6 +46,9 @@ $remaps = @(
 
 $seps = [string][char]0x1f
 $flags = @($remaps | ForEach-Object { "--remap-path-prefix=$($_.From)=$($_.To)" })
+# CARGO_ENCODED_RUSTFLAGS replaces `[target.*] rustflags` from .cargo/config.toml
+# instead of extending it, so the static-CRT choice has to be repeated here.
+$flags += '-Ctarget-feature=+crt-static'
 $existing = $env:CARGO_ENCODED_RUSTFLAGS
 $all = if ($existing) { @($existing.Split([char]0x1f)) + $flags } else { $flags }
 $env:CARGO_ENCODED_RUSTFLAGS = ($all -join $seps)

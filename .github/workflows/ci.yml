@@ -18,21 +18,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: MSYS2 UCRT64 toolchain (gcc, binutils/windres)
+      # Only windres is needed from MSYS2 now: it compiles res/app.ico plus the
+      # generated VERSIONINFO into a COFF object that link.exe accepts. The
+      # compiler and linker themselves are MSVC (see rust-toolchain.toml).
+      - name: MSYS2 binutils (windres for the icon resource)
         uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
           update: false
           path-type: inherit
           install: >-
-            mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-binutils
 
-      - name: Rust GNU-host toolchain
+      - name: Rust MSVC toolchain
         shell: pwsh
         run: |
-          rustup toolchain install stable-x86_64-pc-windows-gnu --profile minimal --component rustfmt --component clippy
-          "RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-gnu" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          rustup toolchain install stable-x86_64-pc-windows-msvc --profile minimal --component rustfmt --component clippy
+          "RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-msvc" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           rustc -V
           cargo -V
 
