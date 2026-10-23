@@ -82,6 +82,10 @@ if ($SkipVerify) {
 $userName = Split-Path -Leaf $userHome
 $needles = @($root, $cargoHome, $rustupHome, $userHome)
 if ($userName -and $userName.Length -ge 3) { $needles += $userName }
+# Generic profile markers as well as the concrete paths: they catch a build
+# whose real CARGO_HOME/RUSTUP_HOME did not match what this script resolved
+# (CI images move them around), and any other user profile that leaked in.
+$needles += @(':\Users\', '\AppData\', '\Documents and Settings\')
 $needles += @('@gmail.com', '@users.noreply', 'theevildays')
 $needles = $needles | Where-Object { $_ } | Select-Object -Unique
 
