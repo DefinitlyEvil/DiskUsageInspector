@@ -187,9 +187,14 @@ installed as a fallback if an MSVC link regression ever needs bisecting.
   a person — so do not trade artifact quality or build time to erase it. The
   remap removes both for free; the check stays because it is also what stops a
   locally built, unstripped binary from being published by mistake.
-- **Release tagging:** bump `Cargo.toml` version, commit, then
+- **Release tagging:** add a `CHANGELOG.md` section, bump the `Cargo.toml`
+  version (`cargo update -p disk-usage-inspector --offline` refreshes
+  `Cargo.lock`, or the `--locked` gate fails), commit, then
   `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z`. A mismatch between
   the tag and the exe's `FileVersion` fails the workflow before publishing.
+  The GitHub release body stays the auto-generated changelog link — editing it
+  needs an authenticated `PATCH`, and no token is stored on this machine — so
+  `CHANGELOG.md` is where the "why" of each version lives.
 
 ---
 
@@ -634,6 +639,8 @@ sorting/tie-breaking.
    `tools/build-release.ps1`** (or its CI equivalent). The check is part of the
    release workflow, so a binary carrying a local path, a user name or an
    address fails the run instead of reaching the releases page.
+10. `CHANGELOG.md` gets an entry in the same commit that bumps the version: what
+    changed, why, and the measured effect. Versions there must match the tags.
 
 ---
 
