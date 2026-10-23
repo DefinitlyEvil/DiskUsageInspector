@@ -127,7 +127,7 @@ Every tagged release publishes a portable archive — no installer, no runtime
 dependencies, nothing to uninstall:
 
 ```text
-disk-usage-inspector-v0.1.0-win64.zip
+disk-usage-inspector-v0.1.1-win64.zip
 ├── disk-usage-inspector.exe   GUI
 ├── duiscan.exe                console benchmark harness
 ├── README.md · LICENSE · NOTICE · CODE_SIGNING.md
@@ -138,10 +138,10 @@ Grab it from the [releases page](https://github.com/DefinitlyEvil/DiskUsageInspe
 then check what you downloaded (no admin rights required):
 
 ```powershell
-Get-FileHash .\disk-usage-inspector-v0.1.0-win64.zip -Algorithm SHA256
+Get-FileHash .\disk-usage-inspector-v0.1.1-win64.zip -Algorithm SHA256
 
 # prove the archive came out of this repository's release workflow
-gh attestation verify .\disk-usage-inspector-v0.1.0-win64.zip --owner DefinitlyEvil
+gh attestation verify .\disk-usage-inspector-v0.1.1-win64.zip --owner DefinitlyEvil
 ```
 
 > **Signing status — unsigned, on purpose.** Builds carry no Authenticode
