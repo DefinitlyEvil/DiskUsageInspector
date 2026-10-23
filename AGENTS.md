@@ -136,8 +136,11 @@ target was verified to compile and link a real Win32 GUI binary (FFI to
 - Build output is pinned to `./target` by `.cargo/config.toml`
   (`[build] target-dir = "target"`), so `target\release\...` is always the
   artifact location regardless of the shell's working directory.
-- No screenshots or benchmark logs are committed: they leak personal paths and
-  file names. Generate them locally when needed.
+- Screenshots may be committed **only** when they show a synthetic fixture: no
+  personal folder/file names, no user paths, no real document titles. The
+  README screenshot (`screenshot.png`) was captured against a `subst`-mapped
+  fixture volume with made-up project names. Benchmark logs and scratch captures
+  stay out of the repo.
 
 ---
 
@@ -367,6 +370,14 @@ UI (`app.rs`):
   child ui shrinks to its content — call `ui.set_min_width(w)` inside the child or
   every numeric column slides left. `add_sized` + `Label::halign` centres the
   widget, so it is not a substitute.
+- **Column arithmetic (fixed 2026-10-24).** The first version added the tree
+  indent *before* the chevron and relied on `item_spacing` for the gaps, so deep
+  rows pushed the numbers right and `% parent` ran off the panel edge (visible in
+  the first README screenshot). The table now sets `item_spacing = (0, 0)`, adds
+  every gap explicitly, reserves the numeric columns from the right
+  (`name_w = avail - (CHEV_W + numeric + 4*GAP)`) and draws `depth * INDENT`
+  *inside* the name cell. Consequence: numeric columns never move when rows are
+  expanded, and the table can never overflow the panel.
 - Expander glyphs are ASCII `+`/`-`; the Unicode chevrons `▸`/`▾` are missing from
   the bundled font and render as dots.
 - Drive rows show label/letter, free space, a bar of used/total, and a detail line

@@ -362,28 +362,36 @@ impl App {
 
         let avail = ui.available_width();
         let size_cols = if self.on_disk { 2.0 } else { 1.0 };
-        let fixed = CHEV_W + size_cols * SIZE_W + COUNT_W + PCT_W + GAP * 5.0 + 10.0;
-        let name_w = (avail - fixed).max(140.0);
+        // The numeric columns own a fixed slice on the right and the name column
+        // absorbs the rest, so the table never spills past the panel edge.
+        // Indentation lives *inside* the name cell: if it were added before the
+        // chevron, every deeper row would push the numbers further right.
+        let fixed = CHEV_W + size_cols * SIZE_W + COUNT_W + PCT_W + GAP * 4.0;
+        let name_w = (avail - fixed).max(160.0);
 
         // Header
         ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing = egui::vec2(GAP, 0.0);
-            ui.add_space(GAP);
+            ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
+            ui.add_space(GAP + CHEV_W);
             ui.allocate_ui_with_layout(
-                egui::vec2(CHEV_W + name_w, ROW_H),
+                egui::vec2(name_w, ROW_H),
                 Layout::left_to_right(Align::Center),
                 |ui| {
                     // Without this the child ui shrinks to the text width and the
                     // numeric columns slide left.
-                    ui.set_min_width(CHEV_W + name_w);
+                    ui.set_min_width(name_w);
                     ui.label(RichText::new("Name").strong());
                 },
             );
+            ui.add_space(GAP);
             col_right(ui, "Size", SIZE_W);
             if self.on_disk {
+                ui.add_space(GAP);
                 col_right(ui, "On disk", SIZE_W);
             }
+            ui.add_space(GAP);
             col_right(ui, "Files", COUNT_W);
+            ui.add_space(GAP);
             col_right(ui, "% parent", PCT_W);
         });
         ui.separator();
@@ -398,11 +406,11 @@ impl App {
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
             .show_rows(ui, ROW_H, rows.len(), |ui, range| {
-                ui.spacing_mut().item_spacing = egui::vec2(GAP, 0.0);
+                ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
                 for i in range {
                     let row = &rows[i];
                     ui.horizontal(|ui| {
-                        ui.add_space(GAP + row.depth as f32 * INDENT);
+                        ui.add_space(GAP);
                         if row.is_dir && row.has_children {
                             // ASCII glyphs: guaranteed to exist in the bundled font.
                             let glyph = if row.expanded { "-" } else { "+" };
@@ -434,6 +442,7 @@ impl App {
                                 Layout::left_to_right(Align::Center),
                                 |ui| {
                                     ui.set_min_width(name_w);
+                                    ui.add_space(row.depth as f32 * INDENT);
                                     ui.add(
                                         egui::Label::new(text)
                                             .sense(Sense::click())
@@ -467,11 +476,15 @@ impl App {
                         if row.reparse {
                             ui.label(RichText::new("↪").weak());
                         }
+                        ui.add_space(GAP);
                         col_right(ui, &format::bytes(row.size), SIZE_W);
                         if on_disk {
+                            ui.add_space(GAP);
                             col_right(ui, &format::bytes(row.on_disk), SIZE_W);
                         }
+                        ui.add_space(GAP);
                         col_right(ui, &format::count(row.files), COUNT_W);
+                        ui.add_space(GAP);
                         col_right(ui, &format!("{:.1}%", row.pct * 100.0), PCT_W);
                     });
                 }
