@@ -152,6 +152,11 @@ gh attestation verify .\disk-usage-inspector-v0.1.0-win64.zip --owner DefinitlyE
 > The full policy, roles and verification steps are in
 > [CODE_SIGNING.md](CODE_SIGNING.md).
 
+The binaries are compiled with `--remap-path-prefix`, so they embed no build
+machine path, user name or e-mail address — only the version metadata described
+below. The release workflow builds them through `tools/build-release.ps1`, which
+fails the build if anything machine-specific leaks into either executable.
+
 ---
 
 ## Build from source
@@ -175,6 +180,13 @@ The build produces two binaries in `target\release\`:
 | :--- | :--- |
 | `disk-usage-inspector.exe` | the GUI (~8 MB, self-contained, no extra runtime DLLs) |
 | `duiscan.exe` | a console harness with the same scanner and no GUI — for benchmarking and scripting |
+
+To build the same artifacts that get published (build paths remapped, leak check
+included), use the release script inside an activated toolchain:
+
+```powershell
+pwsh -NoProfile -File tools\build-release.ps1
+```
 
 ### Benchmark harness
 
@@ -218,6 +230,7 @@ line every 2 s on stderr, which is how stalls are spotted.
 │   └── bin/duiscan.rs      # console benchmark harness
 ├── tests/scan_smoke.rs     # fixture totals, cancellation, drive enumeration
 ├── tools/make-icon.ps1     # regenerates res/app.ico
+├── tools/build-release.ps1 # path-stripped release build + leak check
 └── examples/dump.rs        # debug tree printer
 ```
 

@@ -108,8 +108,9 @@ jobs:
           }
           Write-Host "read-only invariants: clean ($($forbidden.Count) patterns over $($files.Count) files)"
 
-      - name: Build release binaries
-        run: cargo build --release --locked
+      - name: Build release binaries (local paths stripped)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./tools/build-release.ps1
 
       - name: Verify embedded metadata against the tag
         shell: pwsh
