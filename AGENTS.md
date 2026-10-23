@@ -120,6 +120,15 @@ target was verified to compile and link a real Win32 GUI binary (FFI to
   `Downloaded <crate> (registry `ustc`)`. If you see `crates.io` instead,
   `CARGO_HOME` was not set (i.e. `gccenv.bat` was not activated).
 - Do not commit or hard-code mirror URLs in the project; they are machine config.
+- **Machine-level release profile (gotcha).** The same
+  `E:\Cache\CargoHome\config.toml` carries a `[profile.release]` block
+  (`opt-level="z"`, `lto=true`, `strip=true`) that Cargo merges over the
+  project's `Cargo.toml` for *every* crate built in this environment. That made
+  local release binaries quietly differ from CI (8.1 MB size-optimised vs
+  14.3 MB unstripped). `tools/build-release.ps1` now pins
+  `CARGO_PROFILE_RELEASE_*` (env beats both manifest and config) to opt-level 3,
+  thin LTO, one codegen unit, `panic=abort`, `strip="symbols"`, so both sides
+  produce the same artifact.
 
 ### 2.5 Repository state
 
@@ -161,9 +170,11 @@ target was verified to compile and link a real Win32 GUI binary (FFI to
   `tools/build-release.ps1`, which remaps the repo root, `CARGO_HOME`,
   `RUSTUP_HOME` and `%USERPROFILE%` to neutral virtual roots via
   `CARGO_ENCODED_RUSTFLAGS` and then fails if either exe still contains a local
-  path, user name or address. A plain `cargo build --release` must never be
-  published: Rust embeds compile-time `file!()` paths from dependencies, and an
-  unstripped binary exposes the build machine's layout.
+  path, user name or address. It also pins the release profile (§2.4) so the
+  artifact does not depend on machine-level cargo config. A plain
+  `cargo build --release` must never be published: Rust embeds compile-time
+  `file!()` paths from dependencies, and an unstripped binary exposes the build
+  machine's layout.
 - **Release tagging:** bump `Cargo.toml` version, commit, then
   `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z`. A mismatch between
   the tag and the exe's `FileVersion` fails the workflow before publishing.
@@ -454,7 +465,9 @@ UI (`app.rs`):
 | `D:` GUI scan | 23.2 s | 1.2 M | 170 k | 924.3 GiB | 170 k | ~315 MB |
 | `R:` RamDisk (tiny) | < 0.1 s | 4 | 2 | 217.7 MiB | 2 | ~278 MB (egui baseline) |
 
-Throughput ≈ 350–370 k files/s on C:. Memory is dominated by egui itself
+Throughput ≈ 350–370 k files/s on C: warm. A cold-cache pass right after a build
+measured 17.5 s (131 k files/s) — the table above is warm cache, which is what
+the second scan of a volume sees. Memory is dominated by egui itself
 (~270 MB baseline working set once the window has rendered); the scan adds only
 the arena. Unreadable entries on C: ≈ 285 (system files, other profiles, shadow
 copies) and are reported, never fatal.

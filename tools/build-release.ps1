@@ -50,6 +50,18 @@ $existing = $env:CARGO_ENCODED_RUSTFLAGS
 $all = if ($existing) { @($existing.Split([char]0x1f)) + $flags } else { $flags }
 $env:CARGO_ENCODED_RUSTFLAGS = ($all -join $seps)
 
+# Pin the release profile. A machine-level `[profile.release]` in
+# %CARGO_HOME%\config.toml is merged over Cargo.toml (this box has
+# opt-level="z", lto=true, strip=true there), which would make the local
+# artifact differ from CI in both size and symbol content. Environment
+# overrides win over manifest and config, so pinning here keeps the published
+# bytes deterministic.
+$env:CARGO_PROFILE_RELEASE_OPT_LEVEL = '3'
+$env:CARGO_PROFILE_RELEASE_LTO = 'thin'
+$env:CARGO_PROFILE_RELEASE_CODEGEN_UNITS = '1'
+$env:CARGO_PROFILE_RELEASE_PANIC = 'abort'
+$env:CARGO_PROFILE_RELEASE_STRIP = 'symbols'
+
 Write-Host 'remapping build paths:'
 foreach ($r in $remaps) { Write-Host ("  {0} -> {1}" -f $r.From, $r.To) }
 
